@@ -1,21 +1,21 @@
-name: Build & Push to ECR
+name: Build & Push to ECR (develop)
 
 on:
   push:
-    branches: [ "main" ]
-    tags: [ "v*.*.*" ]
+    branches: [ "master" ]
 
 permissions:
-  id-token: write      # OIDC
   contents: read
-
-env:
-  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
-  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'spring-api' }}
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    environment:
+      name: develop
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      TABLE_DYNAMODB: ${{ vars.TABLE_DYNAMODB }}
 
     steps:
       - name: Checkout
@@ -24,42 +24,37 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
+          distribution: temurin
           java-version: '21'
-          distribution: 'temurin'
-          cache: 'gradle'
+          cache: gradle
 
-      - name: Gradle Build (tests incluidos)
+      - name: Gradle build
         run: ./gradlew clean build --no-daemon
 
-      # Autenticación en AWS via OIDC (sin llaves)
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
 
-      # Login en ECR (devuelve registry, ej. 123456789012.dkr.ecr.us-east-1.amazonaws.com)
       - name: Login to Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # Metadatos para tags/labels automáticos
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=branch
-            type=ref,event=tag
+            type=raw,value=develop
             type=sha
 
-      - name: Set up Docker Buildx
+      - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Construir y empujar imagen
-      - name: Build and Push
+      - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
